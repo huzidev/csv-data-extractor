@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { prisma } from "~/lib/prisma";
+import { authenticateAdmin } from "~/db/auth.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -14,13 +14,10 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Username and password are required" }, { status: 400 });
     }
 
-    // Simple authentication check
-    const admin = await prisma.admin.findUnique({
-      where: { username },
-    });
+    const result = await authenticateAdmin(username, password);
 
-    if (!admin || admin.password !== password) {
-      return json({ error: "Invalid credentials" }, { status: 401 });
+    if (!result.success) {
+      return json({ error: result.error }, { status: 401 });
     }
 
     return json({ success: true, message: "Login successful" });

@@ -1,10 +1,10 @@
 import Papa from "papaparse";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { fieldLabels } from "~/constants/fieldLabels";
 import { ColumnMapping, CsvData, CsvUploaderProps } from "~/types/csv";
 import AlertMessage from "./AlertMessage";
 
-const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped }) => {
+const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped, actionData }) => {
   const [csvData, setCsvData] = useState<CsvData | null>(null);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({
     firstName: "",
@@ -16,6 +16,30 @@ const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped }) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Handle action data from Remix
+  useEffect(() => {
+    if (actionData) {
+      setLoading(false);
+      if (actionData.success) {
+        const message = actionData.message || `Successfully imported ${actionData.count} users`;
+        setSuccess(message);
+        setError(null);
+        // Clear form after successful submission
+        setCsvData(null);
+        setColumnMapping({
+          firstName: "",
+          lastName: "",
+          phone: "",
+          email: "",
+          studio: "",
+        });
+      } else if (actionData.error) {
+        setError(actionData.error);
+        setSuccess(null);
+      }
+    }
+  }, [actionData]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -64,7 +88,7 @@ const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped }) => {
     return Object.values(columnMapping).every((value) => value !== "");
   };
 
-  const handleSaveMapping = async () => {
+  const handleSaveMapping = () => {
     if (!csvData || !validateMapping()) {
       setError("Please map all required fields");
       return;
@@ -72,47 +96,18 @@ const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped }) => {
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
-    try {
-      const mappedData = csvData.data.map((row) => ({
-        firstName: row[columnMapping.firstName],
-        lastName: row[columnMapping.lastName],
-        phone: row[columnMapping.phone],
-        email: row[columnMapping.email],
-        studio: row[columnMapping.studio],
-      }));
+    const mappedData = csvData.data.map((row) => ({
+      firstName: row[columnMapping.firstName],
+      lastName: row[columnMapping.lastName],
+      phone: row[columnMapping.phone],
+      email: row[columnMapping.email],
+      studio: row[columnMapping.studio],
+    }));
 
-      const response = await fetch("/api/users/import", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ users: mappedData }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to save data");
-      }
-
-      const result = await response.json();
-      setSuccess(`Successfully imported ${result.count} users`);
-
-      if (onDataMapped) {
-        onDataMapped(mappedData);
-      }
-
-      setCsvData(null);
-      setColumnMapping({
-        firstName: "",
-        lastName: "",
-        phone: "",
-        email: "",
-        studio: "",
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
+    if (onDataMapped) {
+      onDataMapped(mappedData);
     }
   };
 
@@ -139,7 +134,7 @@ const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped }) => {
 
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 className="text-xl font-semibold text-gray-800 mb-4">
-          Step 1: Upload CSV File
+          Upload CSV File
         </h2>
         <div className="flex items-center gap-4">
           <label className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded cursor-pointer flex items-center gap-2 disabled:opacity-50">
@@ -180,7 +175,7 @@ const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped }) => {
       {csvData && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">
-            Step 2: Map CSV Columns to Database Fields
+            Map CSV Columns to Database Fields
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Object.entries(fieldLabels).map(([field, label]) => (
@@ -242,7 +237,7 @@ const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped }) => {
       {csvData && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">
-            Step 3: Data Preview (First 5 rows)
+            Data Preview (First 5 rows)
           </h2>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">

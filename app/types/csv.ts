@@ -10,8 +10,18 @@ export interface ColumnMapping {
     headers: string[];
     data: any[];
   }
+
+  export interface ActionData {
+    success?: boolean;
+    count?: number;
+    updated?: number;
+    skipped?: number;
+    message?: string;
+    error?: string;
+  }
   
   export interface CsvUploaderProps {
     onDataMapped?: (mappedData: any[]) => void;
+    actionData?: ActionData;
   }
   

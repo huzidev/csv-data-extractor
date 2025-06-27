@@ -1,7 +1,11 @@
-import type { MetaFunction } from "@remix-run/node";
+import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { useActionData, useSubmit } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import CsvUploader from "~/components/CsvUploader";
 import LoginForm from "~/components/LoginForm";
+import UserSearch from "~/components/UserSearch";
+import { createUsers, searchUsers } from "~/db/users.server";
 
 export const meta: MetaFunction = () => {
   return [
@@ -13,9 +17,75 @@ export const meta: MetaFunction = () => {
   ];
 };
 
+export async function action({ request }: ActionFunctionArgs) {
+  if (request.method !== "POST") {
+    return json({ error: "Method not allowed" }, { status: 405 });
+  }
+
+  try {
+    const formData = await request.formData();
+    const intent = formData.get("intent");
+
+    if (intent === "import-users") {
+      const usersData = formData.get("users");
+      if (!usersData) {
+        return json({ error: "No user data provided" }, { status: 400 });
+      }
+
+      const users = JSON.parse(usersData as string);
+      const result = await createUsers(users);
+
+      if (!result.success) {
+        return json({ error: result.error }, { status: 500 });
+      }
+
+      return json({ 
+        success: true, 
+        count: result.count,
+        updated: result.updated,
+        skipped: result.skipped,
+        message: result.message
+      });
+    }
+
+    if (intent === "search-users") {
+      const searchTerm = formData.get("searchTerm");
+      const searchType = formData.get("searchType");
+
+      if (!searchTerm) {
+        return json({ error: "Search term is required" }, { status: 400 });
+      }
+
+      if (searchType !== "email" && searchType !== "phone") {
+        return json({ error: "Invalid search type" }, { status: 400 });
+      }
+
+      const result = await searchUsers(searchTerm as string, searchType);
+
+      if (!result.success) {
+        return json({ error: result.error }, { status: 500 });
+      }
+
+      return json({
+        success: true,
+        users: result.users,
+        count: result.count,
+      });
+    }
+
+    return json({ error: "Invalid intent" }, { status: 400 });
+  } catch (error) {
+    console.error("Action error:", error);
+    return json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
 export default function Index() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<"upload" | "search">("upload");
+  const submit = useSubmit();
+  const actionData = useActionData<typeof action>();
 
   useEffect(() => {
     const loggedIn: boolean = localStorage.getItem("isLoggedIn") === "true";
@@ -35,9 +105,58 @@ export default function Index() {
     );
   }
 
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-gray-100">
+        <LoginForm onLogin={handleLogin} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
-      {isLoggedIn ? <CsvUploader /> : <LoginForm onLogin={handleLogin} />}
+      {/* Navigation Tabs */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex space-x-8">
+            <button
+              onClick={() => setActiveTab("upload")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "upload"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              Upload CSV
+            </button>
+            <button
+              onClick={() => setActiveTab("search")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "search"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              Search Users
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "upload" ? (
+        <CsvUploader 
+          onDataMapped={(data) => {
+            const formData = new FormData();
+            formData.append("intent", "import-users");
+            formData.append("users", JSON.stringify(data));
+            submit(formData, { method: "post" });
+          }}
+          actionData={actionData}
+        />
+      ) : (
+        <UserSearch actionData={actionData} />
+      )}
     </div>
   );
 }
