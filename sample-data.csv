@@ -1,0 +1,6 @@
+fName,lName,number,email,studio,id,product
+John,Doe,123-456-7890,john.doe@example.com,Studio A,1,Product X
+Jane,Smith,098-765-4321,jane.smith@example.com,Studio B,2,Product Y
+Mike,Johnson,555-123-4567,mike.johnson@example.com,Studio C,3,Product Z
+Sarah,Williams,777-888-9999,sarah.williams@example.com,Studio A,4,Product A
+David,Brown,111-222-3333,david.brown@example.com,Studio B,5,Product B
