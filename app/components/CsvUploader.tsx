@@ -114,7 +114,7 @@ const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped, actionData }) =
   return (
     <div className="max-w-6xl mx-auto p-6">
       <h1 className="text-4xl font-bold text-gray-800 mb-8">
-        CSV Data Extractor
+        Puppies&Yoga SMS manager
       </h1>
 
       {error && (

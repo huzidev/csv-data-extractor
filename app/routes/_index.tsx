@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import CsvUploader from "~/components/CsvUploader";
 import LoginForm from "~/components/LoginForm";
 import UserSearch from "~/components/UserSearch";
-import { createUsers, searchUsers } from "~/db/users.server";
+import { createUsers, deleteUsers, getAllStudios, getUsersPaginated, searchUsers } from "~/db/users.server";
 
 export const meta: MetaFunction = () => {
   return [
@@ -25,6 +25,8 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const formData = await request.formData();
     const intent = formData.get("intent");
+
+    console.log("SW what is the intent?", intent);
 
     if (intent === "import-users") {
       const usersData = formData.get("users");
@@ -56,7 +58,7 @@ export async function action({ request }: ActionFunctionArgs) {
         return json({ error: "Search term is required" }, { status: 400 });
       }
 
-      if (searchType !== "email" && searchType !== "phone") {
+      if (searchType !== "email" && searchType !== "phone" && searchType !== "name") {
         return json({ error: "Invalid search type" }, { status: 400 });
       }
 
@@ -73,6 +75,66 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
+    if (intent === "get-users") {
+      const page = parseInt(formData.get("page") as string) || 1;
+      const pageSize = parseInt(formData.get("pageSize") as string) || 50;
+      const studioFilter = formData.get("studioFilter") as string || undefined;
+
+      const result = await getUsersPaginated(page, pageSize, studioFilter);
+
+      if (!result.success) {
+        return json({ error: result.error }, { status: 500 });
+      }
+
+      return json({
+        success: true,
+        users: result.users,
+        totalCount: result.totalCount,
+        totalPages: result.totalPages,
+        currentPage: result.currentPage,
+        pageSize: result.pageSize,
+      });
+    }
+
+    if (intent === "get-studios") {
+      const result = await getAllStudios();
+
+      if (!result.success) {
+        return json({ error: result.error }, { status: 500 });
+      }
+
+      return json({
+        success: true,
+        studios: result.studios,
+      });
+    }
+
+    if (intent === "delete-users") {
+      const userIdsString = formData.get("userIds");
+      
+      if (!userIdsString) {
+        return json({ error: "No user IDs provided" }, { status: 400 });
+      }
+
+      const userIds = JSON.parse(userIdsString as string);
+      
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        return json({ error: "Invalid user IDs" }, { status: 400 });
+      }
+
+      const result = await deleteUsers(userIds);
+
+      if (!result.success) {
+        return json({ error: result.error }, { status: 500 });
+      }
+
+      return json({
+        success: true,
+        deletedCount: result.deletedCount,
+        message: `Successfully deleted ${result.deletedCount} user${result.deletedCount !== 1 ? 's' : ''}`
+      });
+    }
+
     return json({ error: "Invalid intent" }, { status: 400 });
   } catch (error) {
     console.error("Action error:", error);
@@ -83,7 +145,7 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function Index() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<"upload" | "search">("upload");
+  const [activeTab, setActiveTab] = useState<"upload" | "users">("upload");
   const submit = useSubmit();
   const actionData = useActionData<typeof action>();
 
@@ -115,7 +177,6 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Navigation Tabs */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-6xl mx-auto px-6">
           <div className="flex space-x-8">
@@ -130,20 +191,19 @@ export default function Index() {
               Upload CSV
             </button>
             <button
-              onClick={() => setActiveTab("search")}
+              onClick={() => setActiveTab("users")}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "search"
+                activeTab === "users"
                   ? "border-blue-500 text-blue-600"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              Search Users
+              User Management
             </button>
           </div>
         </div>
       </div>
 
-      {/* Tab Content */}
       {activeTab === "upload" ? (
         <CsvUploader 
           onDataMapped={(data) => {

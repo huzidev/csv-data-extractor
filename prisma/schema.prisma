@@ -16,11 +16,22 @@ model User {
   lastName  String
   phone     String
   email     String   @unique
-  studio    String
+  studioId  Int
+  studio    Studio   @relation(fields: [studioId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("users")
+}
+
+model Studio {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("studios")
 }
 
 model Admin {
