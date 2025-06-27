@@ -155,16 +155,3 @@ Jane,Smith,098-765-4321,jane.smith@example.com,Studio B,2,Product Y
    - Email → email
    - Studio → studio
 5. Preview the data and save to database
-
-## Troubleshooting
-
-### "Too many open files" Error
-
-If you encounter this error on Windows, it's typically related to Material-UI icon imports. The project has been optimized to use specific icon imports to prevent this issue.
-
-### Development Server Issues
-
-If the development server fails to start:
-1. Stop any running Node processes
-2. Clear the node_modules cache: `npm run dev -- --force`
-3. Restart the development server
