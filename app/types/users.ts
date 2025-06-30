@@ -25,6 +25,7 @@ export interface SearchActionData {
   deletedCount?: number;
   message?: string;
   error?: string;
+  intent?: string;
 }
 
 export interface UserSearchProps {

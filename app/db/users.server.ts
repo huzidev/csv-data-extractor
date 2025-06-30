@@ -110,41 +110,57 @@ export async function getAllUsers() {
   }
 }
 
-export async function searchUsers(searchTerm: string, searchType: "email" | "phone" | "name") {
+export async function searchUsers(searchTerm: string, searchType: "email" | "phone" | "name", studioFilter?: string) {
   try {
-    let users;
+    // Build base search conditions
+    let baseSearchConditions: any;
     
     if (searchType === "email") {
-      users = await prisma.user.findMany({
-        where: {
-          OR: [
-            { email: { contains: searchTerm } },
-            { email: { contains: searchTerm.toLowerCase() } },
-            { email: { contains: searchTerm.toUpperCase() } }
-          ]
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+      baseSearchConditions = {
+        OR: [
+          { email: { contains: searchTerm } },
+          { email: { contains: searchTerm.toLowerCase() } },
+          { email: { contains: searchTerm.toUpperCase() } }
+        ]
+      };
     } else if (searchType === "phone") {
-      users = await prisma.user.findMany({
-        where: {
-          phone: {
-            contains: searchTerm
-          }
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+      baseSearchConditions = {
+        phone: {
+          contains: searchTerm
+        }
+      };
     } else {
-      users = await prisma.user.findMany({
-        where: {
-          OR: [
-            { firstName: { contains: searchTerm } },
-            { lastName: { contains: searchTerm } }
-          ]
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+      baseSearchConditions = {
+        OR: [
+          { firstName: { contains: searchTerm } },
+          { lastName: { contains: searchTerm } }
+        ]
+      };
     }
+
+    // Build where clause with optional studio filter
+    let whereClause: any = baseSearchConditions;
+    
+    if (studioFilter) {
+      // Find the studio ID first
+      const studio = await prisma.studio.findFirst({
+        where: { name: studioFilter }
+      });
+      
+      if (studio) {
+        whereClause = {
+          AND: [
+            baseSearchConditions,
+            { studioId: studio.id }
+          ]
+        };
+      }
+    }
+    
+    const users = await prisma.user.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+    });
 
     // Get studio names using Prisma include
     const usersWithStudios = await Promise.all(

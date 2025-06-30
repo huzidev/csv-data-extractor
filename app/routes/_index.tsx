@@ -53,6 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (intent === "search-users") {
       const searchTerm = formData.get("searchTerm");
       const searchType = formData.get("searchType");
+      const studioFilter = formData.get("studioFilter") as string;
 
       if (!searchTerm) {
         return json({ error: "Search term is required" }, { status: 400 });
@@ -62,7 +63,7 @@ export async function action({ request }: ActionFunctionArgs) {
         return json({ error: "Invalid search type" }, { status: 400 });
       }
 
-      const result = await searchUsers(searchTerm as string, searchType);
+      const result = await searchUsers(searchTerm as string, searchType, studioFilter || undefined);
 
       if (!result.success) {
         return json({ error: result.error }, { status: 500 });
@@ -132,6 +133,37 @@ export async function action({ request }: ActionFunctionArgs) {
         success: true,
         deletedCount: result.deletedCount,
         message: `Successfully deleted ${result.deletedCount} user${result.deletedCount !== 1 ? 's' : ''}`
+      });
+    }
+
+    if (intent === "export-csv") {
+      const searchTerm = formData.get("searchTerm") as string;
+      const searchType = formData.get("searchType") as string;
+      const studioFilter = formData.get("studioFilter") as string;
+
+      let users: any[] = [];
+      
+      if (searchTerm && searchType) {
+        // Export search results with optional studio filter
+        const result = await searchUsers(searchTerm, searchType as "email" | "phone" | "name", studioFilter || undefined);
+        if (!result.success) {
+          return json({ error: result.error }, { status: 500 });
+        }
+        users = result.users || [];
+      } else {
+        // Export all users (with optional studio filter)
+        const result = await getUsersPaginated(1, 999999, studioFilter || undefined);
+        if (!result.success) {
+          return json({ error: result.error }, { status: 500 });
+        }
+        users = result.users || [];
+      }
+
+      return json({
+        success: true,
+        intent: "export-csv",
+        users: users,
+        count: users.length
       });
     }
 

@@ -15,6 +15,7 @@ async function main() {
 
     console.log("Admin user created successfully:");
     console.log("Username:", admin.username);
+    console.log("Password:", "Xk9#mP2$qR8@");
   } catch (error) {
     console.error("Error creating admin user:", error);
   }

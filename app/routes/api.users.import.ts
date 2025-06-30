@@ -47,6 +47,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({
       count: successful,
       failed,
+      type: 'import-users',
       message: `Successfully imported ${successful} users${failed > 0 ? `, ${failed} failed` : ''}`,
     });
   } catch (error) {

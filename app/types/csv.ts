@@ -13,6 +13,7 @@ export interface ColumnMapping {
 
   export interface ActionData {
     success?: boolean;
+    type?: string; 
     count?: number;
     updated?: number;
     skipped?: number;

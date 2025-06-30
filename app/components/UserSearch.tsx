@@ -1,20 +1,28 @@
 import { useSubmit } from "@remix-run/react";
-import React, { useEffect, useState } from "react";
+import Papa from "papaparse";
+import React, { useEffect, useRef, useState } from "react";
 import { Studio, UserSearchProps } from "~/types/users";
 import AlertMessage from "./AlertMessage";
 import ConfirmationModal from "./ConfirmationModal";
+import Pagination from "./Pagination";
+import UserManagementHeader from "./UserManagementHeader";
+import UserSearchForm from "./UserSearchForm";
+import UsersTable from "./UsersTable";
 
 const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchType, setSearchType] = useState<"email" | "phone" | "name">("email");
   const [selectedStudio, setSelectedStudio] = useState<string>("all");
   const [loading, setLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [studios, setStudios] = useState<Studio[]>([]);
   const submit = useSubmit();
+  const processedExportRef = useRef<string | null>(null);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +39,11 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
     formData.append("intent", "search-users");
     formData.append("searchTerm", searchTerm.trim());
     formData.append("searchType", searchType);
+    
+    // Include studio filter in search if selected
+    if (selectedStudio !== "all") {
+      formData.append("studioFilter", selectedStudio);
+    }
     
     submit(formData, { method: "post" });
   };
@@ -72,9 +85,24 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
     setSelectedStudio(studio);
     setSelectedUsers([]);
     setCurrentPage(1);
-    setIsSearchMode(false); 
-    setSearchTerm("");
-    loadUsers(1, studio);
+    
+    // If in search mode, re-run search with new studio filter
+    if (isSearchMode && searchTerm.trim()) {
+      setLoading(true);
+      const formData = new FormData();
+      formData.append("intent", "search-users");
+      formData.append("searchTerm", searchTerm.trim());
+      formData.append("searchType", searchType);
+      if (studio !== "all") {
+        formData.append("studioFilter", studio);
+      }
+      submit(formData, { method: "post" });
+    } else {
+      // Not in search mode, just load users with studio filter
+      setIsSearchMode(false);
+      setSearchTerm("");
+      loadUsers(1, studio);
+    }
   };
 
   const handleUserSelect = (userId: number) => {
@@ -118,11 +146,76 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
     loadUsers(page);
   };
 
+  const handleExportCSV = () => {
+    setExportLoading(true);
+    processedExportRef.current = null;
+    
+    const formData = new FormData();
+    formData.append("intent", "export-csv");
+    
+    // Include search parameters if in search mode
+    if (isSearchMode && searchTerm.trim()) {
+      formData.append("searchTerm", searchTerm.trim());
+      formData.append("searchType", searchType);
+    }
+    
+    // Always include studio filter if one is selected
+    if (selectedStudio !== "all") {
+      formData.append("studioFilter", selectedStudio);
+    }
+    
+    submit(formData, { method: "post" });
+  };
+
+  const downloadCSV = (users: any[]) => {
+    const csvData = users.map(user => ({
+      'First Name': user.firstName,
+      'Last Name': user.lastName,
+      'Email': user.email,
+      'Phone': user.phone ? `="+${user.phone.replace(/^\+/, '')}"` : '',
+      'Studio': user.studio,
+      'Created Date': new Date(user.createdAt).toLocaleDateString()
+    }));
+
+    const csvContent = Papa.unparse(csvData, {
+      header: true,
+      delimiter: ',',
+      newline: '\n',
+      quotes: true,
+      quoteChar: '"'
+    });
+
+    const today = new Date();
+    const dateStr = `${today.getDate()}-${today.getMonth() + 1}-${today.getFullYear().toString().slice(-2)}`;
+    const filename = `users-export-${dateStr}.csv`;
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    setExportLoading(false);
+    setShowExportModal(true);
+    
+    setTimeout(() => {
+      setShowExportModal(false);
+    }, 3000);
+  };
+
   useEffect(() => {
     setLoading(true);
     loadStudios();
   }, []);
-
+  
   useEffect(() => {
     if (actionData) {
       setLoading(false);
@@ -130,6 +223,15 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
       if (actionData.success && actionData.studios) {
         setStudios(actionData.studios);
         loadUsers(1, "all");
+        return; 
+      }
+      
+      if (actionData.success && actionData.intent === "export-csv" && actionData.users) {
+        const exportId = `${actionData.intent}-${actionData.users.length}`;
+        if (processedExportRef.current !== exportId) {
+          processedExportRef.current = exportId;
+          downloadCSV(actionData.users);
+        }
         return; 
       }
       
@@ -141,6 +243,10 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
             formData.append("intent", "search-users");
             formData.append("searchTerm", searchTerm.trim());
             formData.append("searchType", searchType);
+            // Include studio filter in search refresh if selected
+            if (selectedStudio !== "all") {
+              formData.append("studioFilter", selectedStudio);
+            }
             submit(formData, { method: "post" });
           }
         } else {
@@ -150,81 +256,16 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
     }
   }, [actionData]);
 
-  const renderPagination = () => {
-    if (!actionData?.totalPages || actionData.totalPages <= 1) return null;
-
-    const { currentPage = 1, totalPages = 1 } = actionData;
-    const pages = [];
-    
-    const startPage = Math.max(1, currentPage - 2);
-    const endPage = Math.min(totalPages, currentPage + 2);
-    
-    for (let i = startPage; i <= endPage; i++) {
-      pages.push(i);
-    }
-
-    return (
-      <div className="flex justify-center items-center gap-2 mt-6">
-        <button
-          onClick={() => handlePageChange(currentPage - 1)}
-          disabled={currentPage <= 1 || loading}
-          className="px-3 py-2 text-sm bg-gray-200 text-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300"
-        >
-          Previous
-        </button>
-        
-        {startPage > 1 && (
-          <>
-            <button
-              onClick={() => handlePageChange(1)}
-              className="px-3 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-            >
-              1
-            </button>
-            {startPage > 2 && <span className="px-2 text-gray-500">...</span>}
-          </>
-        )}
-        
-        {pages.map(page => (
-          <button
-            key={page}
-            onClick={() => handlePageChange(page)}
-            className={`px-3 py-2 text-sm rounded ${
-              page === currentPage
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            {page}
-          </button>
-        ))}
-        
-        {endPage < totalPages && (
-          <>
-            {endPage < totalPages - 1 && <span className="px-2 text-gray-500">...</span>}
-            <button
-              onClick={() => handlePageChange(totalPages)}
-              className="px-3 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-            >
-              {totalPages}
-            </button>
-          </>
-        )}
-        
-        <button
-          onClick={() => handlePageChange(currentPage + 1)}
-          disabled={currentPage >= totalPages || loading}
-          className="px-3 py-2 text-sm bg-gray-200 text-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300"
-        >
-          Next
-        </button>
-      </div>
-    );
-  };
-
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <h2 className="text-3xl font-bold text-gray-800 mb-8">User Management</h2>
+      <UserManagementHeader 
+        onExportCSV={handleExportCSV}
+        loading={exportLoading}
+        selectedStudio={selectedStudio}
+        isSearchMode={isSearchMode}
+        searchTerm={searchTerm}
+        userCount={actionData?.users?.length || actionData?.count || 0}
+      />
 
       {actionData?.error && (
         <AlertMessage
@@ -242,100 +283,20 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
         />
       )}
 
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <form onSubmit={handleSearch} className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search Term
-              </label>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={`Enter ${searchType === "email" ? "email" : searchType === "phone" ? "phone number" : "name"} to search...`}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                disabled={loading}
-              />
-            </div>
-            <div className="sm:w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search By
-              </label>
-              <select
-                value={searchType}
-                onChange={(e) => setSearchType(e.target.value as "email" | "phone" | "name")}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                disabled={loading}
-              >
-                <option value="email">Email</option>
-                <option value="phone">Phone</option>
-                <option value="name">Name</option>
-              </select>
-            </div>
-            <div className="sm:w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Filter by Studio
-              </label>
-              <select
-                value={selectedStudio}
-                onChange={(e) => handleStudioFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                disabled={loading || isSearchMode}
-              >
-                <option value="all">All Studios</option>
-                {studios.map((studio) => (
-                  <option key={studio.id} value={studio.name}>
-                    {studio.name}
-                  </option>
-                ))}
-              </select>
-              {isSearchMode && (
-                <p className="text-xs text-gray-500 mt-1">Studio filter disabled during search</p>
-              )}
-            </div>
-          </div>
+      <UserSearchForm
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        searchType={searchType}
+        setSearchType={setSearchType}
+        selectedStudio={selectedStudio}
+        handleStudioFilter={handleStudioFilter}
+        loading={loading}
+        isSearchMode={isSearchMode}
+        studios={studios}
+        onSearch={handleSearch}
+        onClear={handleClear}
+      />
 
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={!searchTerm.trim() || loading}
-              className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded flex items-center gap-2"
-            >
-              {loading && (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              )}
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-              {loading ? "Searching..." : "Search"}
-            </button>
-            
-            {isSearchMode && (
-              <button
-                type="button"
-                onClick={handleClear}
-                className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded flex items-center gap-2"
-                disabled={loading}
-              >
-                Clear Search
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
-
-      {/* Users Table */}
       {loading && !actionData?.users ? (
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex justify-center items-center py-8">
@@ -388,71 +349,19 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
             </p>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        <input
-                          type="checkbox"
-                          checked={actionData.users.length > 0 && actionData.users.every(user => selectedUsers.includes(user.id))}
-                          onChange={handleSelectAll}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Email
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Phone
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Studio
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Created
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {actionData.users.map((user, index) => (
-                      <tr
-                        key={user.id}
-                        className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <input
-                            type="checkbox"
-                            checked={selectedUsers.includes(user.id)}
-                            onChange={() => handleUserSelect(user.id)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {user.firstName} {user.lastName}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {user.email}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {user.phone || '-'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {user.studio}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(user.createdAt).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <UsersTable
+                users={actionData.users}
+                selectedUsers={selectedUsers}
+                onUserSelect={handleUserSelect}
+                onSelectAll={handleSelectAll}
+              />
 
-              {renderPagination()}
+              <Pagination
+                currentPage={actionData.currentPage || 1}
+                totalPages={actionData.totalPages || 1}
+                onPageChange={handlePageChange}
+                loading={loading}
+              />
             </>
           )}
         </div>
@@ -464,6 +373,47 @@ const UserSearch: React.FC<UserSearchProps> = ({ actionData }) => {
         onConfirm={confirmDelete}
         userCount={selectedUsers.length}
       />
+
+      {/* Export Completion Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center mb-4">
+              <div className="flex-shrink-0">
+                <svg
+                  className="h-8 w-8 text-green-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-lg font-medium text-gray-900">
+                  Export Completed
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Your CSV file has been downloaded successfully.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

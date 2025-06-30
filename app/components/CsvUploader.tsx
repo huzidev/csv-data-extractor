@@ -17,15 +17,13 @@ const CsvUploader: React.FC<CsvUploaderProps> = ({ onDataMapped, actionData }) =
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Handle action data from Remix
   useEffect(() => {
     if (actionData) {
       setLoading(false);
-      if (actionData.success) {
+      if (actionData.success && actionData.type === "import-users") {
         const message = actionData.message || `Successfully imported ${actionData.count} users`;
         setSuccess(message);
         setError(null);
-        // Clear form after successful submission
         setCsvData(null);
         setColumnMapping({
           firstName: "",
